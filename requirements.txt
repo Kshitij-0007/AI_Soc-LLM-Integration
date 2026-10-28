@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+pydantic>=2
+pydantic-settings
+sqlalchemy>=2
+psycopg[binary]>=3
+pandas
+numpy
+scikit-learn
+xgboost
+shap
+joblib
+pyyaml
+httpx
+python-multipart
+reportlab
+matplotlib

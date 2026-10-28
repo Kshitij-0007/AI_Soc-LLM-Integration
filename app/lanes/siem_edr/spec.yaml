@@ -1,0 +1,21 @@
+lane_id: siem_edr
+display_name: SIEM / EDR logs
+version: "1"
+formats: [csv, jsonl]
+unit_of_analysis: host_window_5m
+entity: {type: host, field: host_name}
+ip_field: src_ip
+time_field: timestamp
+label_column: label
+behavior:
+  on_missing_required: reject_job
+  on_missing_optional: fill_default
+  on_unknown_columns: ignore
+columns:
+  required:
+    - {name: timestamp, type: datetime}
+    - {name: host_name, type: string}
+    - {name: event_id, type: int}
+  optional:
+    - {name: user_name, type: string, default: "unknown"}
+    - {name: src_ip, type: string, default: null, aliases: [ip, source_ip]}

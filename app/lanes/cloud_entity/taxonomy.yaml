@@ -1,0 +1,7 @@
+lane_id: cloud_entity
+classes:
+  BENIGN:      {unified_class: Benign, tactic: None, mitre: [], weight: 0.0}
+  Initial Access: {unified_class: "Initial Access", tactic: Initial Access, mitre: [T1190], weight: 0.9}
+  Persistence: {unified_class: "Persistence", tactic: Persistence, mitre: [T1548], weight: 0.8}
+  Command and Control: {unified_class: "Command and Control", tactic: Command and Control, mitre: [T1071], weight: 0.9}
+  Exfiltration: {unified_class: "Exfiltration", tactic: Exfiltration, mitre: [T1041], weight: 0.85}

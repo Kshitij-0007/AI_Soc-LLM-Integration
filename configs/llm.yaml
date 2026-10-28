@@ -1,0 +1,4 @@
+prompt_version: "1"
+max_retries: 1
+temperature: 0.2
+max_incidents_in_prompt: 20

@@ -1,0 +1,50 @@
+lane_id: netflow
+display_name: NetFlow
+version: "1.0.0"
+formats:
+  - csv
+
+unit_of_analysis: flow
+
+entity:
+  type: ip
+  field: src_ip
+
+ip_field: src_ip
+time_field: timestamp
+label_column: label
+
+behavior:
+  on_missing_required: reject_job
+  on_missing_optional: fill_default
+  on_unknown_columns: ignore
+
+columns:
+  required:
+    - {name: timestamp, type: datetime}
+    - {name: src_ip, type: string}
+    - {name: dst_ip, type: string}
+    - {name: dst_port, type: int}
+    - {name: flow_duration_ms, type: float}
+    - {name: label, type: string}
+
+  optional:
+    - {name: src_port, type: int, default: 0}
+    - {name: protocol, type: string, default: "UNKNOWN"}
+    - {name: total_fwd_packets, type: int, default: 0}
+    - {name: total_bwd_packets, type: int, default: 0}
+    - {name: total_fwd_bytes, type: float, default: 0}
+    - {name: total_bwd_bytes, type: float, default: 0}
+    - {name: total_packets, type: int, default: 0}
+    - {name: total_bytes, type: float, default: 0}
+    - {name: packets_per_second, type: float, default: 0}
+    - {name: bytes_per_second, type: float, default: 0}
+    - {name: failed_connections, type: int, default: 0}
+    - {name: unique_destinations, type: int, default: 0}
+    - {name: tcp_syn_count, type: int, default: 0}
+    - {name: tcp_ack_count, type: int, default: 0}
+    - {name: tcp_rst_count, type: int, default: 0}
+    - {name: threat_confidence, type: float, default: 0}
+    - {name: malware_ioc, type: int, default: 0}
+    - {name: c2_flag, type: int, default: 0}
+    - {name: attack_type, type: string, default: "unknown"}

@@ -1,0 +1,6 @@
+timestamp,principal_name,event_id,user_name,src_ip,label
+2023-01-01 00:00:01,PV01,EV001,admin,10.0.0.1,BENIGN
+2023-01-01 00:00:02,PV02,EV002,admin,10.0.0.2,BENIGN
+2023-01-01 00:00:03,PV03,EV003,admin,10.0.0.3,Initial Access
+2023-01-01 00:00:04,PV04,EV004,admin,10.0.0.4,Persistence
+2023-01-01 00:00:05,PV05,EV005,admin,10.0.0.5,Command and Control

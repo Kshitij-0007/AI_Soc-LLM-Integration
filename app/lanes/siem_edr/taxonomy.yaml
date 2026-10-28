@@ -1,0 +1,7 @@
+lane_id: siem_edr
+classes:
+  BENIGN:      {unified_class: Benign, tactic: None, mitre: [], weight: 0.0}
+  Lateral Movement: {unified_class: "Discovery: Lateral Movement", tactic: Discovery, mitre: [T1021], weight: 0.7}
+  Persistence: {unified_class: "Persistence", tactic: Persistence, mitre: [T1548], weight: 0.8}
+  Credential Access: {unified_class: "Credential Access", tactic: Credential Access, mitre: [T1555], weight: 0.9}
+  Defense Evasion: {unified_class: "Impact: Disk Wipe", tactic: Impact, mitre: [T1490], weight: 0.85}

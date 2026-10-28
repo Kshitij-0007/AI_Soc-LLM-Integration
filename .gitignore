@@ -1,0 +1,13 @@
+# Python `.venv/`, `.env`, and temporary data
+.venv/
+.env
+__pycache__/
+*.pyc
+.data/
+/data/uploads/
+/data/processed/
+/models/*/*
+/outputs/**
+/node_modules/
+/frontend/dist/
+.env.example

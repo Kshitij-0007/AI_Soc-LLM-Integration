@@ -1,0 +1,9 @@
+lane_id: netflow
+classes:
+  BENIGN:      {unified_class: Benign, tactic: None, mitre: [], weight: 0.0}
+  PortScan:    {unified_class: "Reconnaissance: Network Scan", tactic: Reconnaissance, mitre: [T1046], weight: 0.5}
+  Brute Force: {unified_class: "Credential Access: Brute Force", tactic: Credential Access, mitre: [T1110], weight: 0.85}
+  DoS:         {unified_class: "Impact: Denial of Service", tactic: Impact, mitre: [T1499], weight: 0.9}
+  DDoS:        {unified_class: "Impact: Network DoS", tactic: Impact, mitre: [T1498], weight: 0.95}
+  Web Attack:  {unified_class: "Initial Access: Web Exploit", tactic: Initial Access, mitre: [T1190], weight: 0.9}
+  Bot:         {unified_class: "Command and Control", tactic: Command and Control, mitre: [T1071], weight: 0.9}

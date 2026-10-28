@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "ai-soc"
+version = "0.1.0"
+description = "AI Security Operations Center"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "I", "N", "B", "W", "C"]
+
+[tool.pytest]
+python_ignore_glob = ["**/*.pyc", "**/__pycache__/**"]

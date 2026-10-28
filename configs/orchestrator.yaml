@@ -1,0 +1,11 @@
+filter:
+  min_confidence_default: 0.30
+  per_lane: {}
+windows:
+  dedupe_minutes: 5
+  multistage_minutes: 30
+boosts:
+  extra_lane: 0.10
+  extra_tactic: 0.10
+weak_signal_max_confidence: 0.50
+severity_bands: {critical: 0.80, high: 0.60, medium: 0.40}
