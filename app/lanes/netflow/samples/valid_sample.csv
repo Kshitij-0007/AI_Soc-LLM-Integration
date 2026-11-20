@@ -1,4 +1,4 @@
-timestamp,src_ip,dest_ip,flow_duration,dest_port,label
+timestamp,src_ip,dst_ip,flow_duration_ms,dst_port,label
 2023-01-01 00:00:01,10.0.0.1,10.0.0.80,30.5,80,BENIGN
 2023-01-01 00:00:02,10.0.0.2,10.0.0.80,45.2,22,BENIGN
 2023-01-01 00:00:03,10.0.0.3,10.0.0.80,50.1,443,BENIGN

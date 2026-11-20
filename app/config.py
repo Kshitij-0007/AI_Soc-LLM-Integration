@@ -36,8 +36,13 @@ class Settings(BaseSettings):
 
     @property
     def workers_per_lane(self) -> dict:
+        """Optional per-lane overrides; lanes not listed use the default."""
         d = self._load_yaml(CONFIG_DIR / "settings.yaml")
-        return d["executor"]["lanes"]
+        return d["executor"].get("lanes") or {}
+
+    def workers_for(self, lane_id: str) -> int:
+        override = self.workers_per_lane.get(lane_id) or {}
+        return int(override.get("workers", self.default_workers_per_lane))
 
     @property
     def uploads_path(self) -> Path:

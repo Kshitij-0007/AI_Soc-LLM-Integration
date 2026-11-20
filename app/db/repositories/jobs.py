@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from sqlalchemy.orm import Session
 
 from ..models import IngestionJobs
@@ -43,7 +45,7 @@ def update_job_status(
         if error is not None:
             job.error = error
         if status in ("done", "failed"):
-            job.completed_at = None  # will be set by caller
+            job.completed_at = datetime.now(UTC)
 
 
 def get_jobs_by_run(

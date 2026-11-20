@@ -25,7 +25,7 @@ def generate_report_background(
     try:
         # Get all incidents for this run
         from app.db.repositories.jobs import get_jobs_by_run
-        jobs_list = get_jobs_by_run(run_id, db)
+        jobs_list = get_jobs_by_run(db, run_id)
 
         # Get predictions and events to build incident data
         incidents_data = []

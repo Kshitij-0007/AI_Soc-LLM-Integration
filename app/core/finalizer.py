@@ -1,33 +1,28 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from app.db.repositories.jobs import get_jobs_by_run
-from app.orchestration.service import build_incidents
+from app.db.repositories.runs import get_run, update_run_status
 
 
 def check_finalizer(run_id: str, db_session) -> None:
-    """Check if all jobs of a run are done, and if so, build incidents and finalize.
+    """When no job of the run is queued/running, build incidents and close the run.
 
-    Called after each job completion.
+    Called after every job completion. Every job failed -> run 'failed'.
     """
-    # Get all jobs of this run
-    jobs_list = get_jobs_by_run(run_id, db_session)
-
-    # Check status of all jobs
-    all_done = all(j.status in ("done", "failed") for j in jobs_list)
-    any(j.status == "failed" for j in jobs_list)
-
-    if not all_done:
-        return  # Not all jobs completed yet
-
-    # If every job failed, set run status to 'failed'
-    if all(j.status == "failed" for j in jobs_list):
-        from app.db.repositories.runs import update_run_status
-        update_run_status(run_id, "failed", db_session)
+    jobs_list = get_jobs_by_run(db_session, run_id)
+    if not jobs_list or not all(j.status in ("done", "failed") for j in jobs_list):
         return
 
-    # Otherwise, build incidents
-    build_incidents(run_id, db_session)
+    if all(j.status == "failed" for j in jobs_list):
+        update_run_status(db_session, run_id, "failed")
+    else:
+        from app.orchestration.service import build_incidents
 
-    # Set run status to 'scored' and set finished_at
-    from app.db.repositories.runs import update_run_status
-    update_run_status(run_id, "scored", db_session)
+        build_incidents(run_id, db_session)
+        update_run_status(db_session, run_id, "scored")
+
+    run = get_run(db_session, run_id)
+    if run is not None:
+        run.finished_at = datetime.now(UTC)

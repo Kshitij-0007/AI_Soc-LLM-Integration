@@ -96,10 +96,14 @@ def validate(df: pd.DataFrame, spec: LaneSpec) -> ValidationResult:
             unknown_columns=report["unknown_columns"],
         )
 
-    # Step 4: Handle optional columns - fill defaults
+    # Step 4: Handle optional columns - fill defaults, warn (the label column
+    # is training-only, so its absence is expected on uploads).
+    missing_optional: list[str] = []
     for opt in spec.columns.optional:
         col_name = opt.name.strip().lower()
         if col_name not in [c.strip().lower() for c in df.columns]:
+            if opt.name != spec.label_column:
+                missing_optional.append(opt.name)
             # Column missing - fill with default
             default_val = opt.default
             if default_val is None:
@@ -109,6 +113,9 @@ def validate(df: pd.DataFrame, spec: LaneSpec) -> ValidationResult:
                 "default_used": True,
                 "default_value": default_val,
             }
+    report["missing_optional"] = missing_optional
+    if missing_optional:
+        report["status"] = "warning"
 
     # Step 5: Handle unknown columns
     known_columns: set[str] = set()

@@ -11,3 +11,6 @@ __pycache__/
 /node_modules/
 /frontend/dist/
 .env.example
+# Large public datasets and IDE files
+/data/raw/*/real/
+.idea/

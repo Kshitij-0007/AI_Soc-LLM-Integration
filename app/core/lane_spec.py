@@ -67,6 +67,11 @@ class LaneSpec(BaseSettings):
     behavior: LaneBehavior = Field(
         ..., description="Behavior on missing/unknown columns"
     )
+    source_formats: list[str] = Field(
+        default_factory=list,
+        description="Exporter layouts the lane parser converts automatically",
+    )
+    is_enabled: bool = Field(default=True, description="Lane accepts uploads")
 
     def get_alias(self, name: str) -> str | None:
         """Try to find a column by name or its aliases."""

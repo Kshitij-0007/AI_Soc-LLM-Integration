@@ -15,7 +15,7 @@ class LaneExecutor:
 
     def __init__(self, lane_id: str, workers: int | None = None):
         self.lane_id = lane_id
-        workers = workers or settings.default_workers_per_lane
+        workers = workers or settings.workers_for(lane_id)
         self._executor: Executor = ThreadPoolExecutor(max_workers=workers)
         self._submitted: dict[str, int] = {}  # job_id -> future
 
@@ -33,10 +33,11 @@ class LaneExecutor:
         return all(f.done() for f in self._submitted.values())
 
 
-def n_jobs(workers_per_lane: int | None = None, num_lanes: int = 3) -> int:
-    """Calculate total workers across all lanes.
+def n_jobs(workers_per_lane: int | None = None, num_lanes: int | None = None) -> int:
+    """XGBoost threads per job: cores // (lanes * workers per lane).
 
-    Uses thread pool executors by default.
+    Lane count comes from discovery, so new lane folders need no change here.
     """
-    wp = workers_per_lane or settings.default_workers_per_lane
-    return wp * num_lanes
+    from app.core.resources import xgb_threads
+
+    return xgb_threads(num_lanes, workers_per_lane)
