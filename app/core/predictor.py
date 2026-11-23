@@ -19,7 +19,7 @@ import pandas as pd
 import xgboost as xgb
 
 from app.core.explain import top_contributions
-from app.core.model_manifest import ModelManifest, load_manifest
+from app.core.model_manifest import NETFLOW_FOLDER, ModelManifest, load_manifest
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 
@@ -50,7 +50,7 @@ class LoadedModel:
         return self.train_stats.get("feature_stats", {})
 
 
-_cache: dict[tuple[str, float], LoadedModel] = {}
+_cache: dict[str, tuple[Path, int, LoadedModel]] = {}
 _cache_lock = threading.Lock()
 
 
@@ -58,6 +58,9 @@ def resolve_model_dir(model_path: str | Path) -> Path:
     path = Path(model_path)
     if not path.is_absolute():
         path = PROJECT_DIR / path
+    legacy_root = PROJECT_DIR / "models" / "netflow"
+    if path.is_relative_to(legacy_root) and not path.exists():
+        path = legacy_root.with_name(NETFLOW_FOLDER) / path.relative_to(legacy_root)
     return path.parent if path.is_file() else path
 
 
@@ -110,14 +113,16 @@ def load_model(model_path: str | Path, threads: int | None = None) -> LoadedMode
     model_dir = resolve_model_dir(model_path)
     manifest = load_manifest(model_dir)
     model_file = model_dir / manifest.model_file
-    key = (str(model_dir), model_file.stat().st_mtime if model_file.exists() else 0)
+    modified = model_file.stat().st_mtime_ns
     with _cache_lock:
-        if key not in _cache:
-            loaded = _load(model_dir)
-            if threads:
-                loaded.booster.set_param({"nthread": threads})
-            _cache[key] = loaded
-        return _cache[key]
+        cached = _cache.get(manifest.lane_id)
+        if cached and cached[0] == model_file and cached[1] == modified:
+            return cached[2]
+        loaded = _load(model_dir)
+        if threads:
+            loaded.booster.set_param({"nthread": threads})
+        _cache[manifest.lane_id] = (model_file, modified, loaded)
+        return loaded
 
 
 def clear_cache() -> None:

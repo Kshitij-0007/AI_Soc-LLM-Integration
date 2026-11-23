@@ -6,7 +6,22 @@ import pytest
 
 from app.core.validator import validate
 from app.lanes.netflow.features import FEATURE_COLUMNS, build_features, compute_features
-from app.lanes.netflow.train import canonical_label
+from app.lanes.netflow.train import LabeledSet, canonical_label
+
+
+def test_exact_training_sample_keeps_rare_class_and_removes_duplicates():
+    data = LabeledSet(
+        X=pd.DataFrame({"duration": [1, 1, 2, 3, 4]}),
+        y=pd.Series(["BENIGN", "BENIGN", "BENIGN", "BENIGN", "Bot"]),
+        timestamp=pd.Series(pd.date_range("2020-01-01", periods=5)),
+        source_file=pd.Series(["capture"] * 5),
+    )
+    sampled = data.sample_training_rows(3)
+    assert sampled.y.value_counts().to_dict() == {"BENIGN": 2, "Bot": 1}
+    assert sampled.X["duration"].is_unique
+    pd.testing.assert_frame_equal(sampled.X, data.sample_training_rows(3).X)
+    with pytest.raises(ValueError, match="distinct labeled examples"):
+        data.sample_training_rows(5)
 
 
 def _flows() -> pd.DataFrame:

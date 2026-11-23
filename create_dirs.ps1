@@ -19,7 +19,7 @@ $dirs = @(
     'C:\ai_soc\data\processed',
     'C:\ai_soc\data\uploads',
     'C:\ai_soc\data\samples',
-    'C:\ai_soc\models\netflow\1.0.0',
+    'C:\ai_soc\models\netflow_model\1.0.0',
     'C:\ai_soc\models\siem_edr\1.0.0',
     'C:\ai_soc\models\cloud_entity\1.0.0',
     'C:\ai_soc\knowledge',

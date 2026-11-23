@@ -31,7 +31,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=None, help="Output prediction CSV path.")
     args = parser.parse_args()
 
-    model_dir = PROJECT_ROOT / "models" / "netflow" / args.version
+    model_dir = PROJECT_ROOT / "models" / "netflow_model" / args.version
     required_artifacts = ["model.json", "feature_list.json", "class_labels.json", "train_stats.json"]
     missing = [name for name in required_artifacts if not (model_dir / name).is_file()]
     if missing:

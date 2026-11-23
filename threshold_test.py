@@ -2,7 +2,7 @@
 import pandas as pd
 from sklearn.metrics import confusion_matrix
 
-path = "models/netflow/demo/edge_case_predictions.csv"
+path = "models/netflow_model/demo/edge_case_predictions.csv"
 df = pd.read_csv(path)
 
 actual = df["label"].str.lower() == "malicious"

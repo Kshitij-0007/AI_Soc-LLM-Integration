@@ -28,12 +28,13 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR))
 
 from app.core import predictor  # noqa: E402
+from app.core.model_manifest import model_version_dir  # noqa: E402
 from app.core.taxonomy import load_taxonomy_yaml  # noqa: E402
 
 
 def check_model(lane_id: str, version: str) -> tuple[predictor.LoadedModel, list[str]]:
     """Return the loaded model and a list of problems (empty = OK)."""
-    model_dir = PROJECT_DIR / "models" / lane_id / version
+    model_dir = model_version_dir(PROJECT_DIR / "models", lane_id, version)
     if not model_dir.is_dir():
         raise FileNotFoundError(f"Model folder not found: {model_dir}")
     model = predictor.load_model(model_dir)

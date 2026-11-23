@@ -3,6 +3,10 @@ from sqlalchemy.orm import Session
 from ..models import IngestionJobs, Runs
 
 
+def lock_run(session: Session, run_id: str) -> Runs | None:
+    return session.query(Runs).filter_by(run_id=run_id).with_for_update().first()
+
+
 def create_run(session: Session, status: str = "queued") -> Runs:
     run = Runs(status=status)
     session.add(run)
@@ -24,11 +28,7 @@ def get_run_with_jobs(session: Session, run_id: str) -> dict | None:
     run = session.query(Runs).filter(Runs.run_id == run_id).first()
     if not run:
         return None
-    jobs = (
-        session.query(IngestionJobs)
-        .filter(IngestionJobs.run_id == run_id)
-        .all()
-    )
+    jobs = session.query(IngestionJobs).filter(IngestionJobs.run_id == run_id).all()
     return {
         "run_id": str(run.run_id),
         "status": run.status,

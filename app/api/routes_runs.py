@@ -1,137 +1,73 @@
-import uuid
-from pathlib import Path
+from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 
-from app.core.discovery import discover_lanes
-from app.db.repositories.jobs import create_job
-from app.db.repositories.runs import create_run, get_run_with_jobs
-from app.db.session import get_db
+from app.api.deps import Database
+from app.core.run_service import LaneUnavailableError, UploadTooLargeError, submit_run
+from app.db.repositories.incidents import get_incidents_by_run
+from app.db.repositories.predictions import run_predictions
+from app.db.repositories.runs import get_run, get_run_with_jobs
 
 router = APIRouter(prefix="/api", tags=["runs"])
 
 
-@router.post("/runs")
-def create_run(
-    files: list[UploadFile] = File(...),
-    lanes: list[str] = File(...),
-    db: Session = Depends(get_db),
+@router.post("/runs", status_code=202)
+def create(
+    request: Request,
+    db: Database,
+    files: Annotated[list[UploadFile], File(alias="files[]")],
+    lanes: Annotated[list[str], Form(alias="lanes[]")],
 ):
-    """Create a new run with uploaded files.
-
-    Each file is assigned a lane_id from the lanes list (same order).
-    Returns run_id immediately for polling.
-    """
-    # Validate that all lane_ids exist and are enabled
-    lanes_dict = discover_lanes()
-    for lane_id in lanes:
-        if lane_id not in lanes_dict:
-            return {"error": f"Invalid lane_id: {lane_id}"}
-        if not lanes_dict[lane_id].is_enabled:
-            return {"error": f"Lane {lane_id} is disabled"}
-
-    # Create run
-    run_id = str(uuid.uuid4())
-    create_run(db, run_id, "queued")
-
-    # Save files and create ingestion jobs
-    upload_dir = Path("data/uploads") / run_id
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    job_ids = []
-    for i, file in enumerate(files):
-        lane_id = lanes[i] if i < len(lanes) else lanes[0] if lanes else ""
-        # Save file
-        filename = f"{uuid.uuid4()}_{file.filename}"
-        file_path = upload_dir / filename
-        with open(file_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-
-        # Create ingestion job
-        job_id = str(uuid.uuid4())
-        create_job(db, run_id, lane_id, filename)
-
-        # Submit job to lane executor
-        from app.execution.runner import LaneExecutor
-        executor = LaneExecutor(lane_id=lane_id)
-        from app.core.job_service import run_job as rj
-        executor.submit(int(job_id), rj, job_id, lane_id, db, run_id)
-
-        job_ids.append(
-            {
-                "job_id": job_id,
-                "lane_id": lane_id,
-                "filename": filename,
-                "status": "queued",
-            }
-        )
-
-    return {"run_id": run_id, "jobs": job_ids}
+    if len(files) != len(lanes):
+        raise HTTPException(422, "Provide one lane for each file")
+    uploads = [
+        (lane, upload.filename or "upload.csv", upload.file)
+        for lane, upload in zip(lanes, files, strict=True)
+    ]
+    try:
+        return submit_run(db, uploads, request.app.state.lanes, request.app.state.pools)
+    except UploadTooLargeError as exc:
+        raise HTTPException(413, str(exc)) from exc
+    except LaneUnavailableError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/runs/{run_id}")
-def get_run(
-    run_id: str,
-    db: Session = Depends(get_db),
-):
-    """Get run status and job details."""
-    result = get_run_with_jobs(run_id, db)
-    if not result:
-        return {"error": "Run not found"}
+def status(run_id: UUID, db: Database):
+    result = get_run_with_jobs(db, run_id)
+    if result is None:
+        raise HTTPException(404, "Run not found")
     return result
 
 
 @router.get("/runs/{run_id}/results")
-def get_results(
-    run_id: str,
-    lane: str = Query(default=""),
-    min_conf: float = Query(default=0.0),
-    limit: int = Query(default=100),
-    db: Session = Depends(get_db),
+def results(
+    run_id: UUID,
+    db: Database,
+    lane: str | None = None,
+    min_conf: Annotated[float, Query(ge=0, le=1)] = 0.0,
+    limit: Annotated[int, Query(ge=1, le=10000)] = 100,
 ):
-    """Get prediction results for a run.
-
-    Filters by lane (optional), minimum confidence, and result limit.
-    """
-    from sqlalchemy import select
-
-    # Get predictions joined with events
-    select(
-        "entity_type",
-        "entity_value",
-        "window_start",
-        "window_end",
-        "event_count",
+    if get_run(db, run_id) is None:
+        raise HTTPException(404, "Run not found")
+    rows = run_predictions(db, run_id, lane, min_conf, limit)
+    fields = (
+        "entity",
+        "window",
         "predicted_class",
         "confidence",
         "class_probabilities",
         "unified_class",
         "tactic",
-    ).select_from(
-        # Would join events and predictions tables
-    ).where(
-        # Would filter by run_id
     )
-
-    if lane:
-        # Would filter by lane
-        pass
-
-    results = []  # Placeholder
-
-    # Apply limit
-    results = results[:limit]
-
-    return {"rows": results}
+    return {"rows": [{key: row[key] for key in fields} for row in rows]}
 
 
 @router.get("/runs/{run_id}/incidents")
-def get_incidents(
-    run_id: str,
-    db: Session = Depends(get_db),
-):
-    """Get incidents for a run."""
-    from app.db.repositories.incidents import get_incidents_by_run
-    incidents = get_incidents_by_run(run_id, db)
-    return {"incidents": incidents}
+def incidents(run_id: UUID, db: Database):
+    if get_run(db, run_id) is None:
+        raise HTTPException(404, "Run not found")
+    return {"incidents": get_incidents_by_run(db, run_id)}

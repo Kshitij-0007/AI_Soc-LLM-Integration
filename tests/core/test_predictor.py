@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import weakref
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -9,8 +11,19 @@ import xgboost as xgb
 
 from app.core import predictor
 from app.core.contracts import FeatureFrame
-from app.core.model_manifest import load_manifest
+from app.core.model_manifest import load_manifest, model_version_dir
 from app.core.training import train_and_save
+
+
+def test_netflow_folder_preserves_old_registration_and_lane_id(tmp_path, monkeypatch):
+    monkeypatch.setattr(predictor, "PROJECT_DIR", tmp_path)
+    folder = model_version_dir(tmp_path / "models", "netflow", "v1")
+    folder.mkdir(parents=True)
+    (folder / "model.json").touch()
+    assert folder == tmp_path / "models/netflow_model/v1"
+    assert predictor.resolve_model_dir("models/netflow/v1") == folder
+    assert predictor.resolve_model_dir("models/netflow/v1/model.json") == folder
+    assert load_manifest(folder).lane_id == "netflow"
 
 
 def _toy_frame(n: int = 300, seed: int = 0) -> FeatureFrame:
@@ -52,6 +65,15 @@ def test_training_writes_manifest_and_stats(trained, tmp_path):
     assert metrics["holdout"] is not None
     assert metrics["macro_f1"] == metrics["holdout"]["macro_f1"]
     assert metrics["macro_f1"] > 0.8
+
+
+def test_replacing_a_lane_model_releases_cached_booster(trained):
+    folder = Path(trained["artifact_dir"])
+    old = weakref.ref(predictor.load_model(folder))
+    moved = folder.rename(folder.with_name("replacement"))
+    current = predictor.load_model(moved)
+    assert predictor.load_model(moved) is current
+    assert old() is None
 
 
 def test_predict_outputs_contract(trained):

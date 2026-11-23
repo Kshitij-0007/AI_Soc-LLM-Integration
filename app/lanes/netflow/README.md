@@ -27,94 +27,68 @@ destination IPs/ports, no-response share, same-port share, flows per pair).
 No IPs, raw ports or timestamps. Missing values stay NaN (XGBoost handles
 them natively).
 
-## Model 2.0.0
+## Public 100k model
 
-* **Dataset:** CIC-IDS2017, all 8 capture files (`TrafficLabelling`), real
-  traffic. Up to 30,000 flows per class per file, then per class overall.
-* **Classes:** BENIGN, Bot, Brute Force (FTP/SSH-Patator), DDoS, DoS
-  (Hulk, GoldenEye, slowloris, Slowhttptest), PortScan, Web Attack (brute
-  force, XSS, SQLi). Infiltration (36 flows) and Heartbleed (11) are not
-  modelled.
-* **Split:** for every file and class, the latest 20% of flows by time are
-  held out (27,601 rows). CV inside training groups flows by 5-minute capture
-  block. No random row split.
-* **Training:** XGBoost `multi:softprob`, `hist`, depth 6, eta 0.1, rounds
-  from grouped 3-fold CV, inverse-sqrt class weights (normalised to mean
-  1), plus low-weight copies with flags / context / ports blanked so the
-  model copes with exporters that lack them.
+`public-100k-v1` uses 30 numeric features and seven labels. The source
+checksums were verified for this fit. The trainer derived features per file and selected
+100,000 distinct labeled feature rows without replacement (seed 42) from
+11 training files. It drew from CIC-IDS2017, CSE-CIC-IDS2018 and
+NF-ToN-IoT-v2. Labels with identical feature vectors are deduplicated
+within class. Examples with unmapped labels are excluded. The sampler
+splits its row budget across the available classes, and the trainer applies
+inverse-square-root class weights. This changes the class proportions
+relative to production traffic.
 
-Temporal holdout (same network as training):
+Three grouped validation folds within training selected 151 boosting
+rounds via early stopping. The groups use five-minute capture blocks, or
+row blocks for files missing timestamps. The saved booster is fitted on
+all 100,000 selected examples. Five separate capture files supply the
+45,326 mapped evaluation rows. Another 1,851 IoT records in those files
+have unmapped attack families.
 
-| | value |
-|---|---|
-| Macro-F1 | **0.953** |
-| Accuracy | 0.941 |
-| Attack detection rate | 0.979 |
-| Benign false positive rate | 0.007 |
+| Class | Training examples | Held-out examples | Held-out recall |
+|---|---:|---:|---:|
+| BENIGN | 28,940 | 30,475 | 83.8% |
+| Bot | 323 | 1 | 0.0% |
+| Brute Force | 5,553 | 0 | N/A |
+| DDoS | 28,939 | 7,337 | 25.6% |
+| DoS | 28,939 | 1,307 | 64.7% |
+| PortScan | 1,986 | 3,797 | 99.7% |
+| Web Attack | 5,320 | 2,409 | 99.2% |
 
-| Class | Recall | Precision | n |
-|---|---|---|---|
-| BENIGN | 0.993 | 0.930 | 6,004 |
-| Bot | 0.997 | 0.908 | 394 |
-| Brute Force | 0.963 | 1.000 | 2,767 |
-| DDoS | 0.947 | 0.835 | 6,000 |
-| DoS | 0.808 | 1.000 | 6,000 |
-| PortScan | 0.999 | 1.000 | 6,000 |
-| Web Attack | 1.000 | 1.000 | 436 |
+On the same five held-out capture samples, accuracy moved from 75.40% to
+76.00% and macro-F1 from 0.568 to 0.587 compared with the 10k model.
+On 175,341 independent UNSW-NB15 flows, attack recall moved from 34.22%
+to 34.69% and the benign false-positive rate fell from 8.88% to 7.60%.
+The model missed 77,942 attacks there. The single held-out Bot example
+and absence of Brute Force examples limit conclusions about those families.
 
-Most DoS misses (1,125 of 1,149) are predicted as DDoS, so they still raise an alert.
+The 100k fit uses labeled public lab captures. The bundled synthetic CSV
+only exercises the upload pipeline. Public benchmark results can overstate
+accuracy on a new network, particularly where exports omit endpoint
+addresses or timestamps. Collect recent labeled captures before relying
+on alert accuracy in a production network.
 
-### Leave-one-file-out (unseen capture day)
+### Files and reproduction
 
-`scripts/evaluate_netflow.py leave-one-file-out`: train on 7 files, test
-on the 8th. Every attack class lives in a single CIC-IDS2017 file, so the
-held-out attack class is one the model has never seen.
+The single booster lives in `models/netflow_model/public-100k-v1/model.json`.
+The same folder contains evaluation metrics in `metrics.json` and training
+class counts, feature ranges, fold scores and tree settings in
+`train_stats.json`. The scorer uses the manifest, feature list and label
+list to interpret the booster. PostgreSQL also serves registered metrics
+through `GET /api/models`.
 
-| Held-out file | Benign FPR | Unseen attack flagged as some attack |
-|---|---|---|
-| Monday (benign only) | 0.002 | - |
-| Tuesday | 0.001 | Brute Force 0.000 |
-| Wednesday | 0.002 | DoS 0.803 |
-| Thursday morning | 0.003 | Web Attack 0.834 |
-| Thursday afternoon | 0.003 | - |
-| Friday morning | 0.000 | Bot 0.012 |
-| Friday PortScan | 0.006 | PortScan 0.838 |
-| Friday DDoS | 0.003 | DDoS 0.990 |
+On a fresh checkout, these commands download pinned byte ranges, then
+fit the 100k model. Each public sample's URL, SHA-256 and source byte
+ranges are recorded in `data/raw/netflow/real/public-100k/sources.json`.
 
-Mean benign FPR on unseen captures: **0.25%**.
-
-## Limits (read before trusting a score)
-
-* **One network.** All numbers come from CIC-IDS2017. A different network
-  or exporter is likely to score lower. Measure it: get a second labelled
-  dataset (CSE-CIC-IDS2018, UNSW-NB15, NF-UNSW-NB15-v2) and run
-  `scripts/evaluate_netflow.py score --version 2.0.0 --data <files>`, or
-  train with `--test-data <files>` so that dataset becomes the headline.
-* **Supervised.** Attack types missing from training are flagged
-  inconsistently (Brute Force and Bot almost never). Add labelled examples
-  of each attack type you care about.
-* **Synthetic data does not transfer.** `data/raw/netflow/netflow.csv` is
-  not physically realistic (e.g. ICMP flows to port 5432). On it, 2.0.0
-  detects none of its attacks and the compatibility report says `warning`. Don't
-  use it for training or evaluation.
-* **Check the compatibility report** (`validation_report.model_compatibility`
-  on each job, also printed by `scripts/score_file.py`). `warning` means
-  the file doesn't look like the training data and the metrics above
-  don't apply.
-
-## Commands
-
-```bash
-# train (temporal holdout)
-python -m app.lanes.netflow.train --data "data/raw/netflow/real/TrafficLabelling " --version 2.0.0
-# train on one dataset, evaluate on another (preferred once available)
-python -m app.lanes.netflow.train --data <dataset A> --test-data <dataset B> --version 2.1.0
-# evaluate
-python scripts/evaluate_netflow.py leave-one-file-out --data "data/raw/netflow/real/TrafficLabelling "
-python scripts/evaluate_netflow.py score --version 2.0.0 --data <labelled files>
-# score one file like an upload
-python scripts/score_file.py netflow <file.csv> --version 2.0.0
-# check, register and activate
-python scripts/register_models.py netflow 2.0.0 --check-only
-python scripts/register_models.py netflow 2.0.0 --activate
+```powershell
+$captures = "data/raw/netflow/real/public-100k"
+python scripts/fetch_netflow_benchmark.py --output $captures --roles train train-2018 iot-train test final iot-test --training-block-bytes 1572864
+python -m app.lanes.netflow.train --data "$captures/train" "$captures/train-2018" "$captures/iot-train" --test-data "$captures/test" "$captures/final" "$captures/iot-test" --version public-100k-v1 --max-per-class 0 --training-rows 100000 --no-augment --cv-folds 3 --data-source "11 pinned CIC-IDS2017, CSE-CIC-IDS2018 and NF-ToN-IoT-v2 training capture samples; input hashes in data/raw/netflow/real/public-100k/sources.json"
+python scripts/register_models.py netflow public-100k-v1 --check-only
 ```
+
+To reproduce the separate UNSW binary evaluation, use the binary evaluator
+with the mirror's `test.csv` and `--label-column label`. The pinned URL,
+SHA-256 and confusion counts appear under `external_binary` in the metrics.

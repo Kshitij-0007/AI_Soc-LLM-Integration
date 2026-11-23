@@ -1,24 +1,21 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Request
 
-from app.core.discovery import discover_lanes
-from app.db.session import get_db
+from app.api.deps import Database
+from app.db.repositories.lanes import get_all_lanes
 
 router = APIRouter(prefix="/api", tags=["lanes"])
 
 
 @router.get("/lanes")
-def get_lanes(db: Session = Depends(get_db)) -> list[dict]:
-    """Get all discovered lanes."""
-    lanes = discover_lanes()
-    result = []
-    for lane_id, spec in lanes.items():
-        result.append(
-            {
-                "lane_id": lane_id,
-                "display_name": spec.display_name,
-                "formats": spec.formats,
-                "is_enabled": spec.is_enabled,
-            }
-        )
-    return result
+def get_lanes(request: Request, db: Database):
+    specs = request.app.state.lanes
+    return [
+        {
+            "lane_id": row.lane_id,
+            "display_name": row.display_name,
+            "formats": specs[row.lane_id].formats,
+            "is_enabled": row.is_enabled,
+        }
+        for row in get_all_lanes(db)
+        if row.lane_id in specs
+    ]

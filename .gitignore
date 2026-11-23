@@ -10,7 +10,8 @@ __pycache__/
 /outputs/**
 /node_modules/
 /frontend/dist/
-.env.example
 # Large public datasets and IDE files
 /data/raw/*/real/
 .idea/
+
+/data/datasets/

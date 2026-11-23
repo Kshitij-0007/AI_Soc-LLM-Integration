@@ -37,7 +37,7 @@ TEST_PATH = (
 )
 
 OUTPUT_DIR = (
-    PROJECT_ROOT / "models" / "netflow" / "demo"
+    PROJECT_ROOT / "models" / "netflow_model" / "demo"
 )
 
 TARGET_COLUMN = "label"
@@ -129,11 +129,11 @@ def evaluate_edge_cases():
     model_path = (
         PROJECT_ROOT
         / "models"
-        / "netflow"
+        / "netflow_model"
         / "demo"
         / "netflow_xgboost.joblib"
     )
-    output_dir = PROJECT_ROOT / "models" / "netflow" / "demo"
+    output_dir = PROJECT_ROOT / "models" / "netflow_model" / "demo"
 
     if not challenge_path.exists():
         raise FileNotFoundError(

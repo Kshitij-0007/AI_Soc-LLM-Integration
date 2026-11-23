@@ -4,11 +4,17 @@ import yaml
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+CONFIG_DIR = PROJECT_DIR / "configs"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=PROJECT_DIR / ".env", env_file_encoding="utf-8"
+    )
 
-    DATABASE_URL: str = Field(default="postgresql+psycopg://postgres:postgres@localhost:5432/ai_soc")
+    DATABASE_URL: str = "postgresql+psycopg:///aisoc"
+    ENABLED_LANES: list[str] | None = None
     APP_ENV: str = Field(default="dev")
     STORE_RAW: bool = Field(default=False)
     MAX_UPLOAD_MB: int = Field(default=200)
@@ -114,8 +120,5 @@ class Settings(BaseSettings):
         d = self._load_yaml(CONFIG_DIR / "llm.yaml")
         return d["max_incidents_in_prompt"]
 
-# Resolve paths relative to this file's project root
-PROJECT_DIR = Path(__file__).resolve().parents[1]
-CONFIG_DIR = PROJECT_DIR / "configs"
 
 settings = Settings()

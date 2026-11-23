@@ -11,7 +11,9 @@ def get_active_model_per_lane(session: Session) -> dict:
 
 
 def get_model_by_id(session: Session, model_id: str) -> ModelVersions | None:
-    return session.query(ModelVersions).filter(ModelVersions.model_id == model_id).first()
+    return (
+        session.query(ModelVersions).filter(ModelVersions.model_id == model_id).first()
+    )
 
 
 def get_model_by_version(
@@ -34,7 +36,7 @@ def list_models(session: Session, lane_id: str | None = None) -> list[ModelVersi
 def deactivate_lane_models(session: Session, lane_id: str) -> None:
     session.query(ModelVersions).filter(
         ModelVersions.lane_id == lane_id, ModelVersions.is_active
-    ).update({"is_active": False}, synchronize_session=False)
+    ).update({"is_active": False}, synchronize_session="fetch")
     # Flush so the partial unique index sees the old row inactive first.
     session.flush()
 

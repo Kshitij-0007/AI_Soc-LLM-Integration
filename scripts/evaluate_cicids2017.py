@@ -27,7 +27,7 @@ from app.lanes.netflow.features import compute_features
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_ROOT = ROOT / "data" / "raw" / "netflow" / "real"
-MODEL_DIR = ROOT / "models" / "netflow" / "1.0.0"
+MODEL_DIR = ROOT / "models" / "netflow_model" / "1.0.0"
 OUT_DIR = ROOT / "outputs" / "cicids2017_evaluation"
 
 MAX_PER_CLASS = 5000

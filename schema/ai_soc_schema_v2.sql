@@ -2,22 +2,9 @@
 -- Authoritative DDL for the AI-SOC platform (12 tables)
 -- Run with: python scripts/reset_db.py --yes or psql -f schema/ai_soc_schema_v2.sql
 
--- Extensions
-CREATE EXTENSION IF NOT EXISTS "pg_catalog"."uuid-ossp";
-
--- Enum types
-CREATE TYPE IF NOT EXISTS lane_id_enum AS TEXT;
-CREATE TYPE IF NOT EXISTS run_status_enum AS TEXT;
-CREATE TYPE IF NOT EXISTS job_status_enum AS TEXT;
-CREATE TYPE IF NOT EXISTS incident_status_enum AS TEXT;
-CREATE TYPE IF NOT EXISTS severity_enum AS TEXT;
-CREATE TYPE IF NOT EXISTS unified_class_enum AS TEXT;
-CREATE TYPE IF NOT EXISTS predicted_class_enum AS TEXT;
-CREATE TYPE IF NOT EXISTS tactic_enum AS TEXT;
-
 -- lanes table
 CREATE TABLE IF NOT EXISTS lanes (
-    lane_id lane_id_enum PRIMARY KEY,
+    lane_id text PRIMARY KEY,
     display_name TEXT NOT NULL,
     is_enabled boolean DEFAULT true,
     created_at timestamptz DEFAULT now()
@@ -36,7 +23,7 @@ CREATE TABLE IF NOT EXISTS taxonomy_map (
 -- runs table
 CREATE TABLE IF NOT EXISTS runs (
     run_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    status run_status_enum DEFAULT 'queued',
+    status text DEFAULT 'queued',
     started_at timestamptz DEFAULT now(),
     finished_at timestamptz NULL,
     created_by text NULL
@@ -46,9 +33,9 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE TABLE IF NOT EXISTS ingestion_jobs (
     job_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     run_id uuid REFERENCES runs(run_id) ON DELETE CASCADE,
-    lane_id lane_id_enum NOT NULL,
+    lane_id text NOT NULL,
     filename text NOT NULL,
-    status job_status_enum DEFAULT 'queued',
+    status text DEFAULT 'queued',
     rows_total integer DEFAULT 0,
     rows_valid integer DEFAULT 0,
     rows_rejected integer DEFAULT 0,
@@ -90,7 +77,7 @@ CREATE TABLE IF NOT EXISTS events (
 -- model_versions table
 CREATE TABLE IF NOT EXISTS model_versions (
     model_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    lane_id lane_id_enum NOT NULL,
+    lane_id text NOT NULL,
     version text NOT NULL,
     model_path text NOT NULL,
     class_labels jsonb NOT NULL,
@@ -99,8 +86,7 @@ CREATE TABLE IF NOT EXISTS model_versions (
     metrics jsonb,
     data_source text NULL,
     is_active boolean DEFAULT false,
-    activated_at timestamptz NULL,
-    UNIQUE (lane_id, is_active) WHERE is_active = true
+    activated_at timestamptz NULL
 );
 
 -- predictions table
@@ -120,7 +106,7 @@ CREATE TABLE IF NOT EXISTS predictions (
 CREATE TABLE IF NOT EXISTS incidents (
     incident_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     run_id uuid REFERENCES runs(run_id) ON DELETE CASCADE,
-    severity severity_enum NOT NULL,
+    severity text NOT NULL,
     score numeric NOT NULL,
     entity text NOT NULL,
     tactics text[] DEFAULT '{}',

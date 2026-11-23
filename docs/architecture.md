@@ -39,7 +39,9 @@ threads are `cores // (lanes * workers)` (`app/core/resources.py`).
 
 ## Model folders and manifests
 
-`models/<lane>/<version>/` holds:
+NetFlow stores each version in `models/netflow_model/<version>/`. Upload routing,
+model manifests and PostgreSQL use the lane ID `netflow`. Other lanes resolve to
+`models/<lane>/<version>/`. Each version contains the following artifacts.
 
 | file | required | content |
 |---|---|---|
@@ -92,14 +94,11 @@ of the earlier accuracy collapse.
 * **The model reports native classes only.** Confidence and compatibility
   are separate signals; severity and risk belong in `app/orchestration/`.
 
-## Known gaps outside the model layer
+## Local NetFlow setup
 
-* `app/main.py` serves mock responses. `app/api/routes_*.py` are not wired
-  in (and `routes_runs.py` has its own bugs: missing `shutil` import, the
-  route function shadows `create_run`, it builds a new executor per
-  request).
-* `schema/ai_soc_schema_v2.sql` uses `CREATE TYPE IF NOT EXISTS ... AS
-  TEXT`, which PostgreSQL does not support. `init_db.py` will fail until
-  this is fixed.
-* The finalizer can run twice if two jobs of one run finish at the same
-  moment. A row lock on `runs` (`SELECT ... FOR UPDATE`) would serialise it.
+The API registers enabled lanes at startup and shares one executor per lane.
+An upload commits its job IDs and staged files before dispatch. Workers own
+their sessions and write linked events and predictions in one transaction.
+The last worker locks the run before building incidents and finishing it.
+Local setup and the HTTP smoke test are documented in the root README.
+The bundled demo verifies the connections using synthetic traffic.

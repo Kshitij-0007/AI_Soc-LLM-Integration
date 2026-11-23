@@ -1,11 +1,13 @@
 import subprocess
 import sys
 import time
+import urllib.request
+from pathlib import Path
 
 # Start uvicorn in a subprocess
 proc = subprocess.Popen(
     [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8000"],
-    cwd=r"C:\ai_soc",
+    cwd=Path(__file__).resolve().parent,
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
 )
@@ -14,8 +16,6 @@ proc = subprocess.Popen(
 time.sleep(3)
 
 # Test the health endpoint
-import urllib.request
-
 try:
     with urllib.request.urlopen("http://127.0.0.1:8000/api/health") as resp:
         print("Health:", resp.read().decode())

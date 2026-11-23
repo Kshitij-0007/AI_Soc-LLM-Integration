@@ -34,7 +34,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 
 from app.core.contracts import FeatureFrame
-from app.core.model_manifest import ModelManifest, write_manifest
+from app.core.model_manifest import ModelManifest, model_version_dir, write_manifest
 from app.core.resources import xgb_threads
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
@@ -327,7 +327,7 @@ def train_and_save(
         for label, count in zip(class_labels, class_counts, strict=True)
     }
 
-    artifact_dir = models_dir / lane_id / version
+    artifact_dir = model_version_dir(models_dir, lane_id, version)
     artifact_dir.mkdir(parents=True, exist_ok=True)
     model_path = artifact_dir / "model.json"
     model.save_model(str(model_path))

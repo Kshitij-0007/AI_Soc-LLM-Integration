@@ -31,8 +31,8 @@ from app.lanes.netflow.features import compute_features
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_ROOT = ROOT / "data/raw/netflow/real"
-OLD_MODEL_DIR = ROOT / "models/netflow/1.0.0"
-OUT_DIR = ROOT / "models/netflow/cicids2017_experiment"
+OLD_MODEL_DIR = ROOT / "models/netflow_model/1.0.0"
+OUT_DIR = ROOT / "models/netflow_model/cicids2017_experiment"
 REPORT_DIR = ROOT / "outputs/cicids2017_experiment"
 
 SEED = 42

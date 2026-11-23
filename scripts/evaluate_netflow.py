@@ -40,11 +40,16 @@ sys.path.insert(0, str(PROJECT_DIR))
 
 from app.core import predictor  # noqa: E402
 from app.core.contracts import FeatureFrame  # noqa: E402
+from app.core.model_manifest import model_version_dir  # noqa: E402
 from app.core.training import BENIGN, classification_metrics, train_and_save  # noqa: E402
-from app.lanes.netflow.features import FEATURE_SET_VERSION  # noqa: E402
+from app.core.validator import validate  # noqa: E402
+from app.lanes.netflow.adapters import to_canonical  # noqa: E402
+from app.lanes.netflow.features import FEATURE_SET_VERSION, build_features  # noqa: E402
+from app.lanes.netflow.parser import read_raw  # noqa: E402
 from app.lanes.netflow.train import (  # noqa: E402
     LabeledSet,
     expand_paths,
+    load_file_features,
     load_labeled_features,
     load_spec,
 )
@@ -84,6 +89,14 @@ def evaluate_predictions(
     attacks = (actual != BENIGN).to_numpy()
     if attacks.any():
         result["attack_detection_rate"] = float((predicted[attacks] != BENIGN).mean())
+    alerted = np.asarray(predicted) != BENIGN
+    result["binary_accuracy"] = float((attacks == alerted).mean())
+    result["confusion_counts"] = {
+        "true_attacks": int((attacks & alerted).sum()),
+        "missed_attacks": int((attacks & ~alerted).sum()),
+        "false_alerts": int((benign & alerted).sum()),
+        "true_benign": int((benign & ~alerted).sum()),
+    }
     return result
 
 
@@ -112,12 +125,19 @@ def _print_summary(name: str, result: dict) -> None:
 
 
 def mode_score(args: argparse.Namespace) -> dict:
-    model = predictor.load_model(PROJECT_DIR / "models" / "netflow" / args.version)
+    model = predictor.load_model(
+        model_version_dir(PROJECT_DIR / "models", "netflow", args.version)
+    )
     predictor.check_feature_set(model, FEATURE_SET_VERSION)
     spec = load_spec()
     report: dict = {"model": f"netflow/{args.version}", "files": {}}
     for path in expand_paths(args.data):
-        data = load_labeled_features([path], spec, args.max_per_class, verbose=False)
+        data, audit = load_file_features(path, spec)
+        data = data.cap_per_class(args.max_per_class)
+        if not len(data):
+            raise ValueError(
+                f"{path}: no mapped ground truth; excluded {audit['dropped_labels']}"
+            )
         predictions = predictor.predict(model, data.X, shap_top_k=0)
         result = evaluate_predictions(
             data.y, predictions["predicted_class"].to_numpy(), model.class_labels
@@ -125,10 +145,55 @@ def mode_score(args: argparse.Namespace) -> dict:
         result["compatibility"] = predictor.compatibility_report(
             model, data.X, predictions
         )
-        report["files"][path.name] = result
+        result["input_rows"] = audit["rows"]
+        result["excluded_labels"] = audit["dropped_labels"]
+        result["evaluated_share"] = len(data) / audit["rows"]
+        report["files"][str(path)] = result
         _print_summary(path.name, result)
-        print(f"      compatibility: {result['compatibility']['status']} "
-              f"{result['compatibility']['reasons']}")
+        print(
+            f"      compatibility: {result['compatibility']['status']} "
+            f"{result['compatibility']['reasons']}"
+        )
+    return report
+
+
+def mode_binary(args: argparse.Namespace) -> dict:
+    """Evaluate all validated flows against the publisher's 0/1 ground truth."""
+    model = predictor.load_model(
+        model_version_dir(PROJECT_DIR / "models", "netflow", args.version)
+    )
+    predictor.check_feature_set(model, FEATURE_SET_VERSION)
+    spec = load_spec()
+    report = {"model": model.manifest.version, "files": {}}
+    for path in expand_paths(args.data):
+        raw = read_raw(path)
+        truth = pd.to_numeric(raw[args.label_column], errors="raise")
+        if not truth.isin([0, 1]).all():
+            raise ValueError(f"{path}: binary ground truth must contain only 0 and 1")
+        canonical, _ = to_canonical(raw)
+        family = canonical.get("label")
+        checked = validate(canonical.assign(label="unknown"), spec)
+        if checked.status == "rejected" or checked.clean_df.empty:
+            raise ValueError(f"{path}: {checked.validation_report}")
+        index = checked.clean_df.index
+        features = build_features(checked.clean_df, spec)
+        scored = predictor.predict(model, features.X, shap_top_k=0)
+        predicted = scored["predicted_class"].to_numpy()
+        actual = pd.Series(np.where(truth.loc[index] == 0, BENIGN, "attack"))
+        alerts = predicted != model.manifest.benign_label
+        binary = np.where(alerts, "attack", BENIGN)
+        result = evaluate_predictions(actual, binary, [BENIGN, "attack"])
+        result["input_rows"] = len(raw)
+        result["rows_rejected"] = checked.rows_rejected
+        if family is not None:
+            families = family.loc[index]
+            groups = families.groupby(families, dropna=False).indices
+            result["by_native_family"] = {
+                str(label): {"rows": len(rows), "flagged": int(alerts[rows].sum())}
+                for label, rows in groups.items()
+            }
+        report["files"][str(path)] = result
+        _print_summary(path.name, result)
     return report
 
 
@@ -137,7 +202,7 @@ def mode_leave_one_file_out(args: argparse.Namespace) -> dict:
     files = expand_paths(args.data)
     print(f"Featurising {len(files)} files...")
     per_file: dict[str, LabeledSet] = {
-        path.name: load_labeled_features([path], spec, args.max_per_class)
+        str(path): load_labeled_features([path], spec, args.max_per_class)
         for path in files
     }
     report: dict = {"files": {}}
@@ -187,16 +252,27 @@ def main() -> None:
     score.add_argument("--data", type=Path, nargs="+", required=True)
     score.add_argument("--max-per-class", type=int, default=0)
 
+    binary = sub.add_parser("binary", help="Score all families using a 0/1 label.")
+    binary.add_argument("--version", required=True)
+    binary.add_argument("--data", type=Path, nargs="+", required=True)
+    binary.add_argument("--label-column", required=True)
+
     lofo = sub.add_parser("leave-one-file-out", help="Train on N-1 files, test on 1.")
     lofo.add_argument("--data", type=Path, nargs="+", required=True)
     lofo.add_argument("--max-per-class", type=int, default=20_000)
 
     args = parser.parse_args()
-    args.max_per_class = args.max_per_class or None
-    report = mode_score(args) if args.mode == "score" else mode_leave_one_file_out(args)
+    if hasattr(args, "max_per_class"):
+        args.max_per_class = args.max_per_class or None
+    modes = {
+        "score": mode_score,
+        "binary": mode_binary,
+        "leave-one-file-out": mode_leave_one_file_out,
+    }
+    report = modes[args.mode](args)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     path = OUT_DIR / f"{args.mode}_{stamp}.json"
     path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     print(f"\nSaved {path}")

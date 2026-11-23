@@ -22,6 +22,7 @@ Evaluation (headline numbers in metrics.json):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 from dataclasses import dataclass
@@ -124,6 +125,21 @@ def expand_paths(paths: list[Path]) -> list[Path]:
     return files
 
 
+def check_capture_files(train_paths: list[Path], test_paths: list[Path]) -> None:
+    """Reject identical input files even when copies have different names."""
+    seen = {}
+    for path in expand_paths(train_paths) + (
+        expand_paths(test_paths) if test_paths else []
+    ):
+        with path.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        if digest in seen:
+            raise ValueError(
+                f"Duplicate capture file: {path} duplicates {seen[digest]}"
+            )
+        seen[digest] = path
+
+
 @dataclass
 class LabeledSet:
     X: pd.DataFrame
@@ -143,8 +159,31 @@ class LabeledSet:
             source_file=self.source_file.loc[mask].reset_index(drop=True),
         )
 
+    def cap_per_class(self, limit: int | None, seed: int = SEED) -> LabeledSet:
+        if limit is None or limit == 0:
+            return self
+        if limit < 0:
+            raise ValueError("Row cap must be non-negative")
+        positions = _cap_per_class(self.y, limit, seed)
+        return self.subset(np.isin(np.arange(len(self)), positions))
+
     def frame(self) -> FeatureFrame:
         return FeatureFrame(X=self.X, meta=pd.DataFrame(index=self.X.index), y=self.y)
+
+    def sample_training_rows(self, count: int, seed: int = SEED) -> LabeledSet:
+        """Sample distinct labeled feature rows, sharing the budget across classes."""
+        distinct = ~self.X.assign(_label=self.y).duplicated()
+        labels = self.y.loc[distinct]
+        if count < max(1, labels.nunique()) or count > len(labels):
+            raise ValueError(
+                f"Training row count must cover {labels.nunique()} classes "
+                f"and fit within {len(labels)} distinct labeled examples."
+            )
+        shuffled = labels.sample(frac=1, random_state=seed)
+        # Take one example per class each round until the budget is exhausted.
+        rank = shuffled.groupby(shuffled).cumcount()
+        chosen = rank.sort_values(kind="stable").index[:count]
+        return self.subset(self.y.index.isin(chosen))
 
 
 def _cap_per_class(labels: pd.Series, cap: int | None, seed: int) -> np.ndarray:
@@ -197,7 +236,7 @@ def load_file_features(path: Path, spec: LaneSpec) -> tuple[LabeledSet, dict]:
         timestamp=pd.to_datetime(
             features.meta.loc[keep, "window_start"], errors="coerce"
         ).reset_index(drop=True),
-        source_file=pd.Series(path.name, index=range(int(keep.sum()))),
+        source_file=pd.Series(str(path.resolve()), index=range(int(keep.sum()))),
     )
     return labelled, info
 
@@ -213,8 +252,7 @@ def load_labeled_features(
     parts = []
     for path in expand_paths(paths):
         labelled, info = load_file_features(path, spec)
-        keep = _cap_per_class(labelled.y, max_per_class, seed)
-        labelled = labelled.subset(np.isin(np.arange(len(labelled)), keep))
+        labelled = labelled.cap_per_class(max_per_class, seed)
         if verbose:
             counts = ", ".join(f"{k}={v}" for k, v in labelled.y.value_counts().items())
             dropped = info["dropped_labels"]
@@ -231,8 +269,7 @@ def load_labeled_features(
         timestamp=pd.concat([p.timestamp for p in parts], ignore_index=True),
         source_file=pd.concat([p.source_file for p in parts], ignore_index=True),
     )
-    keep = _cap_per_class(combined.y, max_per_class, seed)
-    return combined.subset(np.isin(np.arange(len(combined)), keep))
+    return combined.cap_per_class(max_per_class, seed)
 
 
 def temporal_holdout(data: LabeledSet, share: float, seed: int = SEED) -> np.ndarray:
@@ -292,9 +329,11 @@ def main(
     augment: bool = True,
     cv_folds: int = 3,
     data_source: str | None = None,
+    training_rows: int | None = None,
 ) -> dict:
     from app.lanes.netflow.features import FEATURE_SET_VERSION
 
+    check_capture_files(data_paths, test_paths or [])
     spec = load_spec()
     print(f"[1/4] Loading training data from {len(data_paths)} path(s)...", flush=True)
     data = load_labeled_features(data_paths, spec, max_per_class)
@@ -303,11 +342,10 @@ def main(
 
     if test_paths:
         print(f"[2/4] Loading test data from {len(test_paths)} path(s)...", flush=True)
-        test = load_labeled_features(test_paths, spec, max_per_class)
+        test = load_labeled_features(test_paths, spec, None)
         train = data
-        eval_description = (
-            "separate test dataset: "
-            + ", ".join(sorted(test.source_file.unique()))
+        eval_description = "separate test dataset: " + ", ".join(
+            sorted(test.source_file.unique())
         )
     else:
         print(
@@ -321,6 +359,11 @@ def main(
             f"temporal holdout: latest {holdout_share:.0%} of flows per file and "
             "class (same network as training)"
         )
+
+    if training_rows is not None:
+        if augment:
+            raise ValueError("Use --no-augment with an exact training row count.")
+        train = train.sample_training_rows(training_rows)
 
     print(
         f"      train {len(train):,} rows ({train.y.value_counts().to_dict()})\n"
@@ -339,6 +382,14 @@ def main(
 
     print(f"[3/4] Training on {len(X):,} rows x {X.shape[1]} features...", flush=True)
     sources = data_source or ", ".join(sorted(train.source_file.unique()))
+    notes = [f"NetFlow feature set {FEATURE_SET_VERSION}"]
+    if max_per_class:
+        notes.append(f"Rows capped at {max_per_class} per class")
+    if training_rows is not None:
+        notes.append(
+            f"{training_rows} distinct labeled examples, class-balanced sampling, "
+            f"seed {SEED}, no augmentation"
+        )
     result = train_and_save(
         FeatureFrame(X=X, meta=pd.DataFrame(index=X.index), y=y),
         lane_id=LANE_ID,
@@ -352,11 +403,7 @@ def main(
         reference_rows=reference,
         n_jobs=os.cpu_count(),
         cv_folds=cv_folds,
-        notes=[
-            "Features: app/lanes/netflow/features.py feature set "
-            f"{FEATURE_SET_VERSION}",
-            f"Rows capped at {max_per_class} per class" if max_per_class else "",
-        ],
+        notes=notes,
     )
 
     metrics = result["metrics"]
@@ -384,23 +431,35 @@ def main(
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the NetFlow lane model.")
     parser.add_argument(
-        "--data", type=Path, nargs="+", required=True,
+        "--data",
+        type=Path,
+        nargs="+",
+        required=True,
         help="Labelled training files or folders (any supported exporter).",
     )
     parser.add_argument(
-        "--test-data", type=Path, nargs="+", default=None,
+        "--test-data",
+        type=Path,
+        nargs="+",
+        default=None,
         help="Labelled files from a different dataset/network for evaluation.",
     )
     parser.add_argument("--version", default="2.0.0")
     parser.add_argument(
-        "--max-per-class", type=int, default=30_000,
+        "--max-per-class",
+        type=int,
+        default=30_000,
         help="Row cap per class (per file and overall). 0 = no cap.",
     )
     parser.add_argument("--holdout-share", type=float, default=0.2)
     parser.add_argument("--cv-folds", type=int, default=3, help="0 skips CV.")
+    parser.add_argument(
+        "--training-rows", type=int, help="Exact fit size. Requires --no-augment."
+    )
     parser.add_argument("--data-source", default=None)
     parser.add_argument(
-        "--no-augment", action="store_true",
+        "--no-augment",
+        action="store_true",
         help="Disable missing-feature-group augmentation.",
     )
     return parser.parse_args()
@@ -417,4 +476,5 @@ if __name__ == "__main__":
         augment=not args.no_augment,
         cv_folds=args.cv_folds,
         data_source=args.data_source,
+        training_rows=args.training_rows,
     )

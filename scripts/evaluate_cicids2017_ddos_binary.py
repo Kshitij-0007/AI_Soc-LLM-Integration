@@ -21,7 +21,7 @@ sys.path.insert(0, str(ROOT))
 
 from app.lanes.netflow.features import compute_features
 
-MODEL_DIR = ROOT / "models/netflow/1.0.0"
+MODEL_DIR = ROOT / "models/netflow_model/1.0.0"
 INPUT = (
     ROOT / "data/raw/netflow/real/TrafficLabelling "
     / "Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv"

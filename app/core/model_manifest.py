@@ -25,6 +25,12 @@ from pydantic import BaseModel, Field
 
 MANIFEST_FILE = "manifest.json"
 MODEL_FORMATS = {".json": "xgboost_json", ".ubj": "xgboost_ubj"}
+NETFLOW_FOLDER = "netflow_model"
+
+
+def model_version_dir(models_dir: Path, lane_id: str, version: str) -> Path:
+    folder = NETFLOW_FOLDER if lane_id == "netflow" else lane_id
+    return models_dir / folder / version
 
 
 class ModelManifest(BaseModel):
@@ -57,8 +63,9 @@ def _infer_manifest(model_dir: Path) -> ModelManifest:
     )
     if model_file is None:
         raise FileNotFoundError(f"No model.json or model.ubj in {model_dir}")
+    folder = model_dir.parent.name
     return ModelManifest(
-        lane_id=model_dir.parent.name,
+        lane_id="netflow" if folder == NETFLOW_FOLDER else folder,
         version=model_dir.name,
         model_format=MODEL_FORMATS[Path(model_file).suffix],
         model_file=model_file,

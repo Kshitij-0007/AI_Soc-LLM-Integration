@@ -1,10 +1,10 @@
-
 from __future__ import annotations
 
 import argparse
+import shutil
+import uuid
 from pathlib import Path
 
-import pandas as pd
 import yaml
 from sklearn.model_selection import train_test_split
 
@@ -12,20 +12,13 @@ from app.core.lane_spec import LaneSpec
 from app.core.validator import validate
 from app.lanes.netflow.parser import parse
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-DEFAULT_RAW_DATA = (
-    PROJECT_ROOT / "data" / "raw" / "netflow" / "netflow.csv"
-)
+DEFAULT_RAW_DATA = PROJECT_ROOT / "data" / "raw" / "netflow" / "netflow.csv"
 
-DEFAULT_OUTPUT_DIR = (
-    PROJECT_ROOT / "data" / "processed" / "netflow"
-)
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data" / "processed" / "netflow"
 
-SPEC_PATH = (
-    PROJECT_ROOT / "app" / "lanes" / "netflow" / "spec.yaml"
-)
+SPEC_PATH = PROJECT_ROOT / "app" / "lanes" / "netflow" / "spec.yaml"
 
 TEST_SIZE = 0.20
 RANDOM_STATE = 42
@@ -36,9 +29,7 @@ def load_lane_spec() -> LaneSpec:
     """Load the existing NetFlow lane configuration."""
 
     if not SPEC_PATH.is_file():
-        raise FileNotFoundError(
-            f"NetFlow specification not found: {SPEC_PATH}"
-        )
+        raise FileNotFoundError(f"NetFlow specification not found: {SPEC_PATH}")
 
     with SPEC_PATH.open("r", encoding="utf-8") as file:
         config = yaml.safe_load(file)
@@ -49,6 +40,7 @@ def load_lane_spec() -> LaneSpec:
 def prepare_datasets(
     raw_path: Path,
     output_dir: Path,
+    sections: bool = False,
 ) -> None:
     """Validate raw NetFlow data and create stratified datasets."""
 
@@ -57,9 +49,7 @@ def prepare_datasets(
     print("=" * 60)
 
     if not raw_path.is_file():
-        raise FileNotFoundError(
-            f"Raw dataset not found: {raw_path.resolve()}"
-        )
+        raise FileNotFoundError(f"Raw dataset not found: {raw_path.resolve()}")
 
     # 1. Ingest the raw CSV through the existing parser.
     print("\n[1/5] Ingesting raw NetFlow data...")
@@ -84,7 +74,8 @@ def prepare_datasets(
             f"Missing required columns: {result.missing_required}"
         )
 
-    df = result.clean_df.copy()
+    # Preserve numeric demo features and original exporter fields for consumers.
+    df = raw_df.copy()
 
     print(f"      Validation status: {result.status}")
     print(f"      Valid rows: {result.rows_valid}")
@@ -96,24 +87,15 @@ def prepare_datasets(
     label_column = spec.label_column
 
     if label_column not in df.columns:
-        raise ValueError(
-            f"Label column '{label_column}' is missing."
-        )
+        raise ValueError(f"Label column '{label_column}' is missing.")
 
     # 3. Normalize and validate binary classification labels.
     print("\n[3/5] Checking classification labels...")
 
-    labels = (
-        df[label_column]
-        .astype("string")
-        .str.strip()
-        .str.lower()
-    )
+    labels = df[label_column].astype("string").str.strip().str.lower()
 
     if labels.isna().any() or labels.eq("").any():
-        raise ValueError(
-            "Missing or empty target labels were found."
-        )
+        raise ValueError("Missing or empty target labels were found.")
 
     actual_labels = set(labels.unique())
     unexpected = actual_labels - EXPECTED_LABELS
@@ -125,9 +107,7 @@ def prepare_datasets(
         )
 
     if actual_labels != EXPECTED_LABELS:
-        raise ValueError(
-            "Both benign and malicious samples are required."
-        )
+        raise ValueError("Both benign and malicious samples are required.")
 
     df[label_column] = labels
 
@@ -147,22 +127,26 @@ def prepare_datasets(
     test_df = df.loc[test_indices].copy()
 
     if set(train_indices).intersection(set(test_indices)):
-        raise RuntimeError(
-            "Data leakage detected: a row appears in both partitions."
-        )
+        raise RuntimeError("Data leakage detected: a row appears in both partitions.")
 
     if len(train_df) + len(test_df) != len(df):
-        raise RuntimeError(
-            "Train/test row counts do not match validated row count."
-        )
+        raise RuntimeError("Train/test row counts do not match validated row count.")
 
     # 4. Save the datasets without changing the raw source.
     print("\n[4/5] Saving train/test datasets...")
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    train_path = output_dir / "train.csv"
-    test_path = output_dir / "test.csv"
+    if sections:
+        output_dir = output_dir / str(uuid.uuid4())
+        for section in ("raw", "train", "test"):
+            (output_dir / section).mkdir(parents=True)
+        shutil.copy2(raw_path, output_dir / "raw" / raw_path.name)
+        train_path = output_dir / "train" / "train.csv"
+        test_path = output_dir / "test" / "test.csv"
+    else:
+        train_path = output_dir / "train.csv"
+        test_path = output_dir / "test.csv"
 
     train_df.to_csv(train_path, index=False)
     test_df.to_csv(test_path, index=False)
@@ -205,11 +189,17 @@ def main() -> None:
         help="Directory for processed train/test CSV files.",
     )
 
+    parser.add_argument(
+        "--sections",
+        action="store_true",
+        help="Store each dataset under a unique raw/train/test directory.",
+    )
     args = parser.parse_args()
 
     prepare_datasets(
         raw_path=args.data.resolve(),
         output_dir=args.output_dir.resolve(),
+        sections=args.sections,
     )
 
 

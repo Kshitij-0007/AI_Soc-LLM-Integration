@@ -252,7 +252,11 @@ def run_job(
     except Exception as error:  # noqa: BLE001 - a job must never break others
         logger.exception("Job %s failed", job_id)
         db_session.rollback()
-        update_job_status(db_session, job_id, "failed", error=str(error))
+        message = (
+            str(error) if isinstance(error, ValueError)
+            else "Scoring failed. See server logs for the job ID."
+        )
+        update_job_status(db_session, job_id, "failed", error=message)
         db_session.commit()
     finally:
         try:

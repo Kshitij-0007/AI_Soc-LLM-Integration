@@ -31,6 +31,7 @@ from app.core.job_service import (  # noqa: E402
     missing_columns_message,
     score_frame,
 )
+from app.core.model_manifest import model_version_dir  # noqa: E402
 from app.core.validator import validate  # noqa: E402
 
 
@@ -64,7 +65,7 @@ def main() -> int:
         return 1
 
     ff = load_build_features(args.lane_id, lane_dir)(validated.clean_df, spec)
-    model_dir = PROJECT_DIR / "models" / args.lane_id / args.version
+    model_dir = model_version_dir(PROJECT_DIR / "models", args.lane_id, args.version)
     predictions, report = score_frame(
         ff,
         args.lane_id,

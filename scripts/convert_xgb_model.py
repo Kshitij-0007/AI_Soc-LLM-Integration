@@ -32,7 +32,7 @@ import xgboost as xgb
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR))
 
-from app.core.model_manifest import ModelManifest, write_manifest  # noqa: E402
+from app.core.model_manifest import ModelManifest, model_version_dir, write_manifest  # noqa: E402
 
 
 def _load_booster(path: Path, trust_pickle: bool) -> xgb.Booster:
@@ -94,7 +94,7 @@ def main() -> None:
     if args.benign_label not in classes:
         raise SystemExit(f"Class list needs '{args.benign_label}'.")
 
-    out_dir = PROJECT_DIR / "models" / args.lane / args.version
+    out_dir = model_version_dir(PROJECT_DIR / "models", args.lane, args.version)
     if out_dir.exists() and any(out_dir.iterdir()):
         raise SystemExit(f"{out_dir} already exists and is not empty.")
     out_dir.mkdir(parents=True, exist_ok=True)

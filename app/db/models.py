@@ -1,14 +1,16 @@
 from sqlalchemy import (
+    ARRAY,
     JSON,
     UUID,
     Boolean,
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     Text,
-    UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import declarative_base
 
@@ -121,7 +123,12 @@ class ModelVersions(Base):
     activated_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("lane_id", "is_active", name="uq_one_active_model_per_lane"),
+        Index(
+            "uq_one_active_model_per_lane",
+            "lane_id",
+            unique=True,
+            postgresql_where=text("is_active = true"),
+        ),
     )
 
 
@@ -158,9 +165,9 @@ class Incidents(Base):
     severity = Column(Text, nullable=False)
     score = Column(Numeric(5, 2), nullable=False)
     entity = Column(Text, nullable=False)
-    tactics = Column(JSON, default="[]")
-    lanes = Column(JSON, default="[]")
-    flags = Column(JSON, default="[]")
+    tactics = Column(ARRAY(Text), default=list)
+    lanes = Column(ARRAY(Text), default=list)
+    flags = Column(ARRAY(Text), default=list)
     created_at = Column(DateTime, default=None)
 
 
